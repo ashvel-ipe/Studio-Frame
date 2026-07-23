@@ -15,6 +15,9 @@ import {
   Sparkles,
   ExternalLink,
   Layers,
+  Lock,
+  LogOut,
+  KeyRound,
 } from 'lucide-react';
 
 interface AdminPortalProps {
@@ -28,6 +31,8 @@ interface AdminPortalProps {
   onImportArchives: (jsonString: string) => void;
 }
 
+const MASTER_ADMIN_PASSWORD = 'Mulearnmbccet';
+
 export const AdminPortal: React.FC<AdminPortalProps> = ({
   isOpen,
   onClose,
@@ -38,11 +43,105 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   onSaveCurrentFrame,
   onImportArchives,
 }) => {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name'>('newest');
   const [previewFrame, setPreviewFrame] = useState<ArchivedFrame | null>(null);
 
   if (!isOpen) return null;
+
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (passwordInput === MASTER_ADMIN_PASSWORD) {
+      setIsAuthenticated(true);
+      setPasswordError(false);
+    } else {
+      setPasswordError(true);
+    }
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setPasswordInput('');
+    setPasswordError(false);
+  };
+
+  // Render Lock Screen if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="bg-[#fcfbf9] border-2 border-black w-full max-w-md p-6 sm:p-8 shadow-2xl flex flex-col gap-6 text-black animate-in fade-in zoom-in-95 duration-200">
+          <div className="flex items-center justify-between border-b border-black/10 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-black text-amber-300 flex items-center justify-center font-bold">
+                <Lock className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-serif italic text-xl font-bold">Admin Portal</h3>
+                <p className="text-[10px] font-sans uppercase tracking-widest text-black/50">Protected Security Gate</p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-1.5 text-black/50 hover:text-black transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <p className="text-xs font-sans text-black/70 leading-relaxed">
+            Enter the administrative key to access, download, or manage student frame archives.
+          </p>
+
+          <form onSubmit={handlePasswordSubmit} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10px] font-sans uppercase tracking-widest font-bold text-black/80 flex items-center gap-1">
+                <KeyRound className="w-3.5 h-3.5 text-black/60" />
+                <span>Admin Master Password</span>
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={passwordInput}
+                  onChange={(e) => {
+                    setPasswordInput(e.target.value);
+                    setPasswordError(false);
+                  }}
+                  placeholder="Enter password..."
+                  autoFocus
+                  className="w-full bg-white border border-black px-3.5 py-2.5 text-sm font-mono text-black focus:outline-none focus:ring-2 focus:ring-black/20"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-black/50 hover:text-black text-[10px] font-sans uppercase tracking-wider font-semibold"
+                >
+                  {showPassword ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              {passwordError && (
+                <p className="text-xs text-rose-600 font-sans font-bold mt-1">
+                  ⚠️ Invalid password! Access denied.
+                </p>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-3 bg-black text-white font-sans text-xs uppercase tracking-widest font-bold hover:bg-neutral-800 transition-colors flex items-center justify-center gap-2"
+            >
+              <ShieldCheck className="w-4 h-4 text-amber-300" />
+              <span>Unlock Repository</span>
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   // Filter and sort frames
   const filteredArchives = archives
@@ -115,13 +214,24 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-2 text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-            title="Close Portal"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1 px-2.5 py-1.5 bg-white/10 hover:bg-rose-950/80 hover:text-rose-300 text-white/80 text-[10px] font-sans uppercase tracking-widest transition-colors border border-white/20"
+              title="Lock Admin Portal"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Lock Portal</span>
+            </button>
+
+            <button
+              onClick={onClose}
+              className="p-2 text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+              title="Close Portal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Dashboard Quick Stats Bar */}

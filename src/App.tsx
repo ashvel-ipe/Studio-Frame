@@ -30,7 +30,7 @@ export default function App() {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           setArchivedFrames(parsed);
           return;
         }
@@ -38,54 +38,7 @@ export default function App() {
     } catch (e) {
       console.error('Failed to load archives from localStorage', e);
     }
-
-    // Seed default sample frame records for instant rich admin view
-    const initialSeed: ArchivedFrame[] = [
-      {
-        id: 'seed-1',
-        createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-        userName: 'ASHISH VELIP',
-        userSubtext: 'CSE • BATCH OF 2028',
-        chapterName: 'μlearn',
-        chapterCode: 'MBCCET',
-        thumbnailUrl: SAMPLE_STUDENT_PHOTO,
-        posterData: {
-          ...DEFAULT_POSTER_DATA,
-          userName: 'ASHISH VELIP',
-          photoUrl: SAMPLE_STUDENT_PHOTO,
-          brightness: 105,
-          contrast: 130,
-          saturation: 0, // B&W
-        },
-        downloadCount: 3,
-      },
-      {
-        id: 'seed-2',
-        createdAt: new Date(Date.now() - 3600000 * 24).toISOString(),
-        userName: 'ANANYA SHARMA',
-        userSubtext: 'AI & DS • BATCH OF 2028',
-        chapterName: 'μlearn',
-        chapterCode: 'MBCCET',
-        thumbnailUrl: SAMPLE_STUDENT_PHOTO_2,
-        posterData: {
-          ...DEFAULT_POSTER_DATA,
-          userName: 'ANANYA SHARMA',
-          userSubtext: 'AI & DS • BATCH OF 2028',
-          photoUrl: SAMPLE_STUDENT_PHOTO_2,
-          brightness: 110,
-          contrast: 120,
-          saturation: 125,
-        },
-        downloadCount: 5,
-      },
-    ];
-
-    setArchivedFrames(initialSeed);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(initialSeed));
-    } catch (e) {
-      console.error('Failed to save initial seed to localStorage', e);
-    }
+    setArchivedFrames([]);
   }, []);
 
   // Sync archives to localStorage

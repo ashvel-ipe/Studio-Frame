@@ -103,7 +103,7 @@ export const Controls: React.FC<ControlsProps> = ({
       </div>
 
       {/* Tab Navigation */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 border-b border-black/10 pb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 border-b border-black/10 pb-4">
         <button
           onClick={() => setActiveTab('photo_name')}
           className={`flex items-center justify-center gap-1.5 py-2.5 px-2 font-sans text-[10px] sm:text-[11px] uppercase tracking-[0.12em] transition-all border ${
@@ -150,18 +150,6 @@ export const Controls: React.FC<ControlsProps> = ({
         >
           <Type className="w-3.5 h-3.5 shrink-0" />
           <span className="truncate">Typography</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('template_text')}
-          className={`flex items-center justify-center gap-1.5 py-2.5 px-2 font-sans text-[10px] sm:text-[11px] uppercase tracking-[0.12em] transition-all border ${
-            activeTab === 'template_text'
-              ? 'bg-black text-white border-black font-semibold'
-              : 'bg-transparent text-black/70 border-black/15 hover:border-black hover:text-black'
-          }`}
-        >
-          <Settings className="w-3.5 h-3.5 shrink-0" />
-          <span className="truncate">Poster Text</span>
         </button>
       </div>
 
@@ -261,22 +249,6 @@ export const Controls: React.FC<ControlsProps> = ({
               placeholder="e.g. CSE • BATCH OF 2028"
               className="bg-transparent border-b border-black/30 py-2 text-sm font-sans uppercase tracking-widest text-black/80 focus:outline-none focus:border-black placeholder:text-black/20 transition-colors"
             />
-          </div>
-
-          {/* Quick Preset Names */}
-          <div className="flex flex-wrap items-center gap-2 pt-1">
-            <span className="text-[10px] font-sans uppercase tracking-widest text-black/50">Samples:</span>
-            {['Ashish Velip', 'Ananya Sharma', 'Rahul K.', 'Siddharth M.'].map(
-              (sample) => (
-                <button
-                  key={sample}
-                  onClick={() => onChange({ userName: sample })}
-                  className="px-2.5 py-1 bg-black/5 hover:bg-black hover:text-white font-sans text-[10px] uppercase tracking-widest text-black/70 transition-colors"
-                >
-                  {sample}
-                </button>
-              )
-            )}
           </div>
         </div>
       )}
@@ -610,98 +582,6 @@ export const Controls: React.FC<ControlsProps> = ({
                 title="Custom Color"
               />
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 5: Poster Text & Options */}
-      {activeTab === 'template_text' && (
-        <div className="flex flex-col gap-4 animate-in fade-in duration-200">
-          <label className="font-sans text-[10px] uppercase tracking-widest font-bold text-black/60">
-            Poster Layout Text & Variables
-          </label>
-
-          <div className="flex flex-col gap-4">
-            <div>
-              <label className="text-[10px] font-sans uppercase tracking-widest text-black/60">Header Tagline</label>
-              <input
-                type="text"
-                value={data.headerText}
-                onChange={(e) => onChange({ headerText: e.target.value })}
-                className="w-full bg-transparent border-b border-black/30 py-1.5 text-xs font-sans uppercase tracking-widest text-black outline-none focus:border-black"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-[10px] font-sans uppercase tracking-widest text-black/60">Logo Title</label>
-                <input
-                  type="text"
-                  value={data.chapterName}
-                  onChange={(e) => onChange({ chapterName: e.target.value })}
-                  className="w-full bg-transparent border-b border-black/30 py-1.5 text-xs font-sans uppercase tracking-widest text-black outline-none focus:border-black"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-sans uppercase tracking-widest text-black/60">College Code</label>
-                <input
-                  type="text"
-                  value={data.chapterCode}
-                  onChange={(e) => onChange({ chapterCode: e.target.value })}
-                  className="w-full bg-transparent border-b border-black/30 py-1.5 text-xs font-sans uppercase tracking-widest text-black outline-none focus:border-black"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="text-[10px] font-sans uppercase tracking-widest text-black/60">Banner Line 1</label>
-              <input
-                type="text"
-                value={data.bannerText1}
-                onChange={(e) => onChange({ bannerText1: e.target.value })}
-                className="w-full bg-transparent border-b border-black/30 py-1.5 text-xs font-sans text-black outline-none focus:border-black"
-              />
-            </div>
-
-            <div>
-              <label className="text-[10px] font-sans uppercase tracking-widest text-black/60">Banner Line 2</label>
-              <input
-                type="text"
-                value={data.bannerText2}
-                onChange={(e) => onChange({ bannerText2: e.target.value })}
-                className="w-full bg-transparent border-b border-black/30 py-1.5 text-xs font-sans text-black outline-none focus:border-black"
-              />
-            </div>
-
-            <div>
-              <label className="text-[10px] font-sans uppercase tracking-widest text-black/60">Bottom Quote</label>
-              <input
-                type="text"
-                value={data.quoteText}
-                onChange={(e) => onChange({ quoteText: e.target.value })}
-                className="w-full bg-transparent border-b border-black/30 py-1.5 text-xs font-serif italic text-black outline-none focus:border-black"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between pt-3 border-t border-black/10">
-            <span className="text-xs font-sans uppercase tracking-wider text-black/80">Show Paperclip</span>
-            <input
-              type="checkbox"
-              checked={data.showPaperclip}
-              onChange={(e) => onChange({ showPaperclip: e.target.checked })}
-              className="accent-black w-4 h-4 rounded-none cursor-pointer"
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-sans uppercase tracking-wider text-black/80">Show Purple Accent Blocks</span>
-            <input
-              type="checkbox"
-              checked={data.showPurpleAccents}
-              onChange={(e) => onChange({ showPurpleAccents: e.target.checked })}
-              className="accent-black w-4 h-4 rounded-none cursor-pointer"
-            />
           </div>
         </div>
       )}

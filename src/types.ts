@@ -2,7 +2,7 @@ export type FontOption = 'Caveat' | 'Permanent Marker' | 'Dancing Script' | 'Plu
 
 export type TemplateTheme = 'ulearn_dark' | 'purple_gradient' | 'deep_midnight' | 'cyber_neon';
 
-export type ControlTab = 'photo_name' | 'photo_transform' | 'filters' | 'font_style' | 'template_text';
+export type ControlTab = 'photo_name' | 'photo_transform' | 'filters' | 'font_style';
 
 export interface FilterPreset {
   id: string;
