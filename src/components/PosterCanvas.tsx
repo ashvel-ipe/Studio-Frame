@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { PosterData } from '../types';
 import { Camera, Image as ImageIcon, Move, RotateCw, ZoomIn } from 'lucide-react';
 
+const logoUrl = new URL('../../mbc.png', import.meta.url).href;
+
 interface PosterCanvasProps {
   data: PosterData;
   onPhotoUpload?: (file: File) => void;
@@ -20,6 +22,7 @@ export const PosterCanvas: React.FC<PosterCanvasProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [photoImage, setPhotoImage] = useState<HTMLImageElement | null>(null);
+  const [logoImage, setLogoImage] = useState<HTMLImageElement | null>(null);
   const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number; initialX: number; initialY: number }>({
     x: 0,
@@ -44,6 +47,15 @@ export const PosterCanvas: React.FC<PosterCanvasProps> = ({
     };
     img.src = data.photoUrl;
   }, [data.photoUrl]);
+
+  // Preload the uploaded logo image once
+  useEffect(() => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => setLogoImage(img);
+    img.onerror = () => console.error('Failed to load frame logo');
+    img.src = logoUrl;
+  }, []);
 
   // Helper to draw text scaled dynamically to fit maximum width
   const drawFittedText = (
@@ -136,24 +148,29 @@ export const PosterCanvas: React.FC<PosterCanvasProps> = ({
     ctx.fillText(data.headerText, 0, 0);
     ctx.restore();
 
-    // Top Right Logo: "μlearn MBCCET"
-    ctx.save();
-    ctx.textAlign = 'right';
-    
-    // μlearn text
-    ctx.font = '800 46px "Plus Jakarta Sans", sans-serif';
-    const logoGradient = ctx.createLinearGradient(1000, 50, 1140, 50);
-    logoGradient.addColorStop(0, '#a78bfa'); // violet-400
-    logoGradient.addColorStop(0.5, '#818cf8'); // indigo-400
-    logoGradient.addColorStop(1, '#60a5fa'); // blue-400
-    ctx.fillStyle = logoGradient;
-    ctx.fillText(data.chapterName, 1140, 80);
+    // Top Right Logo Image
+    const logoMaxWidth = 850;
+    const logoMaxHeight = 330;
+    const logoAspect = logoImage ? (logoImage.width / logoImage.height) : 1;
+    const logoTargetWidth = logoImage ? Math.min(logoMaxWidth, Math.round(logoMaxHeight * logoAspect)) : logoMaxWidth;
+    const logoTargetHeight = logoImage ? Math.round(logoTargetWidth / logoAspect) : 140;
+    const logoX = W - logoTargetWidth - 10;
+    const logoY = 40;
 
-    // MBCCET subtitle
-    ctx.font = '700 24px "Space Grotesk", sans-serif';
-    ctx.fillStyle = '#ffffff';
-    ctx.letterSpacing = '0.15em';
-    ctx.fillText(data.chapterCode, 1140, 118);
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
+    if (logoImage) {
+      ctx.drawImage(logoImage, logoX, logoY, logoTargetWidth, logoTargetHeight);
+    } else {
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'right';
+      ctx.font = '800 46px "Plus Jakarta Sans", sans-serif';
+      ctx.fillText(data.chapterName, W - 40, logoY + 20);
+      ctx.font = '700 24px "Space Grotesk", sans-serif';
+      ctx.fillText(data.chapterCode, W - 40, logoY + 60);
+    }
     ctx.restore();
 
     // 4. Centerpiece - Double Cards Assembly
@@ -472,7 +489,7 @@ export const PosterCanvas: React.FC<PosterCanvasProps> = ({
   // Render trigger whenever inputs change
   useEffect(() => {
     renderCanvas();
-  }, [data, photoImage]);
+  }, [data, photoImage, logoImage]);
 
   // Mouse / Touch Dragging to reposition photo inside canvas
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
