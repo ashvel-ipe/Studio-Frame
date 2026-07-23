@@ -1,0 +1,6 @@
+{
+  "name": "Fresher Photo Frame Generator",
+  "description": "Upload photo and name to customize the uLearn MBCCET Fresher polaroid frame poster and download high-resolution images.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
