@@ -7,6 +7,20 @@ import { ExportToolbar } from './components/ExportToolbar';
 import { AdminPortal } from './components/AdminPortal';
 import { Sparkles, CheckCircle2 } from 'lucide-react';
 
+declare module 'react/jsx-runtime' {
+  export function jsx(type: any, props?: any, key?: any): any;
+  export function jsxs(type: any, props?: any, key?: any): any;
+  export function jsxDEV(type: any, props?: any, key?: any, isStaticChildren?: boolean, source?: any, self?: any): any;
+}
+
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      [elemName: string]: any;
+    }
+  }
+}
+
 const STORAGE_KEY = 'studio_frame_archives_v1';
 
 const SAMPLE_STUDENT_PHOTO =
