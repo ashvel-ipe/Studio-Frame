@@ -6,20 +6,13 @@ import { Header } from './components/Header';
 import { ExportToolbar } from './components/ExportToolbar';
 import { AdminPortal } from './components/AdminPortal';
 import { Sparkles, CheckCircle2 } from 'lucide-react';
-
-declare module 'react/jsx-runtime' {
-  export function jsx(type: any, props?: any, key?: any): any;
-  export function jsxs(type: any, props?: any, key?: any): any;
-  export function jsxDEV(type: any, props?: any, key?: any, isStaticChildren?: boolean, source?: any, self?: any): any;
-}
-
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      [elemName: string]: any;
-    }
-  }
-}
+import {
+  deleteArchivesFromSupabase,
+  isSupabaseConfigured,
+  loadArchivesFromSupabase,
+  syncArchivesToSupabase,
+  uploadGeneratedFrameToSupabase,
+} from './lib/supabase';
 
 const STORAGE_KEY = 'studio_frame_archives_v1';
 
@@ -38,24 +31,57 @@ export default function App() {
   const [activeFrameId, setActiveFrameId] = useState<string>(() => 'frame-' + Date.now());
   const [directDownloadUrl, setDirectDownloadUrl] = useState<string | null>(null);
 
-  // Initialize Archived Frames from LocalStorage or Seed Defaults
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setArchivedFrames(parsed);
-          return;
-        }
+  const mergeArchives = (remoteArchives: ArchivedFrame[], localArchives: ArchivedFrame[]) => {
+    const merged = [...remoteArchives, ...localArchives];
+    const uniqueById = new Map<string, ArchivedFrame>();
+
+    merged.forEach((frame) => {
+      const existing = uniqueById.get(frame.id);
+      if (!existing || new Date(frame.createdAt).getTime() > new Date(existing.createdAt).getTime()) {
+        uniqueById.set(frame.id, frame);
       }
-    } catch (e) {
-      console.error('Failed to load archives from localStorage', e);
-    }
-    setArchivedFrames([]);
+    });
+
+    return Array.from(uniqueById.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  };
+
+  // Initialize Archived Frames from local storage, then hydrate from Supabase when available
+  useEffect(() => {
+    const initializeArchives = async () => {
+      let localArchives: ArchivedFrame[] = [];
+
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            localArchives = parsed;
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load archives from localStorage', e);
+      }
+
+      if (!isSupabaseConfigured) {
+        setArchivedFrames(localArchives);
+        return;
+      }
+
+      try {
+        const remoteArchives = await loadArchivesFromSupabase();
+        const merged = mergeArchives(remoteArchives, localArchives);
+        setArchivedFrames(merged);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+      } catch (e) {
+        console.error('Failed to load archives from Supabase, using local fallback', e);
+        setArchivedFrames(localArchives);
+      }
+    };
+
+    void initializeArchives();
   }, []);
 
-  // Sync archives to localStorage
+  // Sync archives to localStorage and Supabase when configured
   const saveArchivesToStorage = (updated: ArchivedFrame[]) => {
     setArchivedFrames(updated);
     try {
@@ -63,6 +89,14 @@ export default function App() {
     } catch (e) {
       console.error('Failed to persist archives', e);
     }
+
+    if (!isSupabaseConfigured) {
+      return;
+    }
+
+    void syncArchivesToSupabase(updated).catch((e) => {
+      console.error('Failed to sync archives to Supabase', e);
+    });
   };
 
   const showToast = (msg: string) => {
@@ -121,6 +155,12 @@ export default function App() {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(newList));
         } catch (e) {
           console.error('Failed to auto-save frame to storage', e);
+        }
+
+        if (isSupabaseConfigured) {
+          void syncArchivesToSupabase(newList).catch((error) => {
+            console.error('Failed to auto-sync frame to Supabase', error);
+          });
         }
         return newList;
       });
@@ -219,7 +259,7 @@ export default function App() {
   };
 
   // Export 1: Full Poster Download PNG
-  const handleDownloadPosterPNG = () => {
+  const handleDownloadPosterPNG = async () => {
     const dataUrl = captureCanvasDataUrl('png');
     if (!dataUrl) {
       showToast('Canvas not ready for export.');
@@ -234,8 +274,25 @@ export default function App() {
     const safeName = (posterData.userName || 'fresher')
       .toLowerCase()
       .replace(/[^a-z0-9]/g, '_');
-    
-    // Create anchor trigger
+
+    const canvas = document.querySelector('canvas');
+    if (canvas) {
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob((result) => resolve(result), 'image/png');
+      });
+
+      if (blob) {
+        const fileName = `frame_${Date.now()}.png`;
+        try {
+          await uploadGeneratedFrameToSupabase(blob, fileName);
+        } catch (error) {
+          console.error('Failed to upload generated frame to Supabase:', error);
+        }
+      } else {
+        console.error('Failed to create PNG blob from canvas for Supabase upload.');
+      }
+    }
+
     const link = document.createElement('a');
     link.download = `${safeName}_ulearn_mbccet_poster.png`;
     link.href = dataUrl;
@@ -388,12 +445,23 @@ export default function App() {
   const handleDeleteArchivedFrame = (id: string) => {
     const updated = archivedFrames.filter((f) => f.id !== id);
     saveArchivesToStorage(updated);
+    if (isSupabaseConfigured) {
+      void deleteArchivesFromSupabase([id]).catch((error) => {
+        console.error('Failed to delete archive from Supabase', error);
+      });
+    }
     showToast('Frame deleted from archive.');
   };
 
   const handleClearAllArchives = () => {
     if (window.confirm('Are you sure you want to clear all archived frames?')) {
+      const idsToRemove = archivedFrames.map((frame) => frame.id);
       saveArchivesToStorage([]);
+      if (isSupabaseConfigured && idsToRemove.length > 0) {
+        void deleteArchivesFromSupabase(idsToRemove).catch((error) => {
+          console.error('Failed to clear archives from Supabase', error);
+        });
+      }
       showToast('Archive repository cleared.');
     }
   };
