@@ -6,6 +6,12 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undef
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
+if (!isSupabaseConfigured) {
+  console.warn(
+    'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your environment to enable uploads and remote archive sync.'
+  );
+}
+
 export const supabase: SupabaseClient | null = isSupabaseConfigured
   ? createClient(supabaseUrl!, supabaseAnonKey!)
   : null;
@@ -76,18 +82,20 @@ export const deleteArchivesFromSupabase = async (ids: string[]): Promise<void> =
 
 export const uploadGeneratedFrameToSupabase = async (blob: Blob, fileName: string): Promise<void> => {
   if (!supabase) {
-    return;
+    throw new Error('Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
   }
 
-  const { error: uploadError } = await supabase.storage.from(GENERATED_FRAMES_BUCKET).upload(fileName, blob, {
-    contentType: 'image/png',
-    cacheControl: '3600',
-    upsert: false,
-  });
+  const { error: uploadError } = await supabase.storage
+    .from(GENERATED_FRAMES_BUCKET)
+    .upload(fileName, blob, {
+      contentType: blob.type || 'image/png',
+      cacheControl: '3600',
+      upsert: false,
+    });
 
   if (uploadError) {
     console.error('Supabase storage upload failed:', uploadError);
-    return;
+    throw uploadError;
   }
 
   const { error: insertError } = await supabase.from(GENERATED_FRAMES_TABLE).insert({
@@ -97,5 +105,6 @@ export const uploadGeneratedFrameToSupabase = async (blob: Blob, fileName: strin
 
   if (insertError) {
     console.error('Supabase generated_frames insert failed:', insertError);
+    throw insertError;
   }
 };

@@ -287,9 +287,11 @@ export default function App() {
           await uploadGeneratedFrameToSupabase(blob, fileName);
         } catch (error) {
           console.error('Failed to upload generated frame to Supabase:', error);
+          showToast('Supabase upload failed. Check console for details.');
         }
       } else {
         console.error('Failed to create PNG blob from canvas for Supabase upload.');
+        showToast('Could not create image for Supabase upload.');
       }
     }
 
