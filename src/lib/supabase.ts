@@ -18,6 +18,22 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
 
 const GENERATED_FRAMES_BUCKET = 'generated-frames';
 
+const ensureStorageSession = async () => {
+  if (!supabase) {
+    throw new Error('Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
+  }
+
+  const { data } = await supabase.auth.getSession();
+  if (data.session) {
+    return;
+  }
+
+  const { error } = await supabase.auth.signInAnonymously();
+  if (error) {
+    console.warn('Supabase anonymous sign-in did not create a usable session for storage uploads.', error);
+  }
+};
+
 export const loadArchivesFromSupabase = async (): Promise<ArchivedFrame[]> => {
   if (!supabase) {
     return [];
@@ -52,8 +68,10 @@ export const uploadGeneratedFrameToSupabase = async (blob: Blob, fileName: strin
     throw new Error('Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
   }
 
+  await ensureStorageSession();
+
   const storagePath = fileName.replace(/^\/+/, '');
-  const { error: uploadError } = await supabase.storage
+  const { data, error: uploadError } = await supabase.storage
     .from(GENERATED_FRAMES_BUCKET)
     .upload(storagePath, blob, {
       contentType: blob.type || 'image/png',
@@ -61,15 +79,15 @@ export const uploadGeneratedFrameToSupabase = async (blob: Blob, fileName: strin
       upsert: true,
     });
 
-  if (uploadError) {
+  if (uploadError || !data?.path) {
     console.error('Supabase storage upload failed:', uploadError);
-    throw uploadError;
+    throw uploadError ?? new Error('Supabase storage upload returned no object path.');
   }
 
-  const { data } = supabase.storage.from(GENERATED_FRAMES_BUCKET).getPublicUrl(storagePath);
+  const { data: publicData } = supabase.storage.from(GENERATED_FRAMES_BUCKET).getPublicUrl(data.path);
 
   return {
-    publicUrl: data.publicUrl,
-    storagePath,
+    publicUrl: publicData.publicUrl,
+    storagePath: data.path,
   };
 };
