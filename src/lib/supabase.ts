@@ -17,7 +17,7 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
   : null;
 
 const ARCHIVE_TABLE_NAME = 'studio_frame_archives_v1';
-const GENERATED_FRAMES_BUCKET = 'generated_frames';
+const GENERATED_FRAMES_BUCKET = 'generated-frames';
 
 const toArchiveMeta = (value: unknown) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
