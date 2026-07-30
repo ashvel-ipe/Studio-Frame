@@ -15,6 +15,8 @@ import {
 } from './lib/supabase';
 
 const STORAGE_KEY = 'studio_frame_archives_v1';
+const LOCAL_ARCHIVE_LIMIT = 8;
+const LOCAL_ARCHIVE_FALLBACK_LIMIT = 3;
 
 const SAMPLE_STUDENT_PHOTO =
   'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80';
@@ -45,6 +47,163 @@ export default function App() {
     return Array.from(uniqueById.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   };
 
+  const sanitizePosterDataForStorage = (posterData: PosterData): PosterData => {
+    const sanitized = { ...posterData };
+    if (
+      typeof sanitized.photoUrl === 'string' &&
+      !sanitized.photoUrl.startsWith('http://') &&
+      !sanitized.photoUrl.startsWith('https://')
+    ) {
+      sanitized.photoUrl = null;
+    }
+
+    return sanitized;
+  };
+
+  const sanitizeFrameForStorage = (frame: ArchivedFrame): ArchivedFrame => ({
+    ...frame,
+    thumbnailUrl: frame.imageUrl && frame.imageUrl.startsWith('http') ? frame.imageUrl : '',
+    posterData: sanitizePosterDataForStorage(frame.posterData),
+    imageUrl: frame.imageUrl && frame.imageUrl.startsWith('http') ? frame.imageUrl : undefined,
+    storagePath: frame.storagePath ?? undefined,
+    uploadStatus: frame.uploadStatus ?? 'pending',
+    lastUploadError: frame.lastUploadError ?? null,
+    syncedAt: frame.syncedAt ?? undefined,
+  });
+
+  const buildArchiveFrame = (thumbnailUrl: string, overrides: Partial<ArchivedFrame> = {}): ArchivedFrame => ({
+    id: overrides.id ?? 'frame-' + Date.now(),
+    createdAt: overrides.createdAt ?? new Date().toISOString(),
+    userName: overrides.userName ?? (posterData.userName || 'Unnamed Student'),
+    userSubtext: overrides.userSubtext ?? (posterData.userSubtext || ''),
+    chapterName: overrides.chapterName ?? (posterData.chapterName || 'μlearn'),
+    chapterCode: overrides.chapterCode ?? (posterData.chapterCode || 'MBCCET'),
+    thumbnailUrl,
+    posterData: { ...posterData, ...(overrides.posterData ?? {}) },
+    downloadCount: overrides.downloadCount ?? 1,
+    imageUrl: overrides.imageUrl,
+    storagePath: overrides.storagePath,
+    uploadStatus: overrides.uploadStatus ?? 'pending',
+    lastUploadError: overrides.lastUploadError ?? null,
+    syncedAt: overrides.syncedAt,
+  });
+
+  const dataUrlToBlob = async (dataUrl: string): Promise<Blob | null> => {
+    try {
+      const response = await fetch(dataUrl);
+      return await response.blob();
+    } catch (error) {
+      console.error('Failed to convert data URL to Blob for archive upload.', error);
+      return null;
+    }
+  };
+
+  const persistArchivesToLocalStorage = (frames: ArchivedFrame[]) => {
+    const cache = frames.map(sanitizeFrameForStorage).slice(0, LOCAL_ARCHIVE_LIMIT);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(cache));
+      return;
+    } catch (error) {
+      if (!isQuotaError(error)) {
+        console.error('Failed to persist archives', error);
+        return;
+      }
+
+      const fallback = cache.slice(0, LOCAL_ARCHIVE_FALLBACK_LIMIT);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(fallback));
+        console.warn(
+          `LocalStorage quota exceeded. Stored only the ${fallback.length} most recent archived frames.`
+        );
+      } catch (fallbackError) {
+        console.error('Failed to persist archives after quota fallback', fallbackError);
+      }
+    }
+  };
+
+  const saveArchivesToStorage = (updated: ArchivedFrame[]) => {
+    setArchivedFrames(updated);
+    persistArchivesToLocalStorage(updated);
+
+    if (!isSupabaseConfigured) {
+      return;
+    }
+
+    void syncArchivesToSupabase(updated.map(sanitizeFrameForStorage)).catch((e) => {
+      console.error('Failed to sync archives to Supabase', e);
+    });
+  };
+
+  const uploadArchiveFrame = async (
+    frame: ArchivedFrame,
+    sourceBlob?: Blob | null,
+    options?: { showErrorToast?: boolean }
+  ) => {
+    if (!isSupabaseConfigured || frame.imageUrl || frame.storagePath) {
+      return;
+    }
+
+    const blob = sourceBlob ?? (frame.thumbnailUrl.startsWith('data:image/') ? await dataUrlToBlob(frame.thumbnailUrl) : null);
+    if (!blob) {
+      const failedFrame = { ...frame, uploadStatus: 'failed' as const, lastUploadError: 'No image payload available for upload.', syncedAt: new Date().toISOString() };
+      setArchivedFrames((prev) => {
+        const updated = prev.map((item) => (item.id === frame.id ? failedFrame : item));
+        persistArchivesToLocalStorage(updated);
+        return updated;
+      });
+      if (options?.showErrorToast) {
+        showToast('Frame saved locally, but Supabase upload failed. You can retry later.');
+      }
+      return;
+    }
+
+    try {
+      const result = await uploadGeneratedFrameToSupabase(blob, `${frame.id}.png`);
+      const uploadedFrame: ArchivedFrame = {
+        ...frame,
+        imageUrl: result.publicUrl,
+        storagePath: result.storagePath,
+        thumbnailUrl: result.publicUrl || frame.thumbnailUrl,
+        uploadStatus: 'uploaded',
+        lastUploadError: null,
+        syncedAt: new Date().toISOString(),
+      };
+
+      setArchivedFrames((prev) => {
+        const updated = prev.map((item) => (item.id === frame.id ? uploadedFrame : item));
+        persistArchivesToLocalStorage(updated);
+        if (isSupabaseConfigured) {
+          void syncArchivesToSupabase(updated.map(sanitizeFrameForStorage)).catch((error) => {
+            console.error('Failed to sync uploaded frame to Supabase', error);
+          });
+        }
+        return updated;
+      });
+    } catch (error) {
+      const failedFrame = {
+        ...frame,
+        uploadStatus: 'failed' as const,
+        lastUploadError: error instanceof Error ? error.message : 'Archive upload failed.',
+        syncedAt: new Date().toISOString(),
+      };
+
+      setArchivedFrames((prev) => {
+        const updated = prev.map((item) => (item.id === frame.id ? failedFrame : item));
+        persistArchivesToLocalStorage(updated);
+        if (isSupabaseConfigured) {
+          void syncArchivesToSupabase(updated.map(sanitizeFrameForStorage)).catch((syncError) => {
+            console.error('Failed to sync failed upload state to Supabase', syncError);
+          });
+        }
+        return updated;
+      });
+
+      if (options?.showErrorToast) {
+        showToast('Frame saved locally, but Supabase upload failed. You can retry later.');
+      }
+    }
+  };
+
   // Initialize Archived Frames from local storage, then hydrate from Supabase when available
   useEffect(() => {
     const initializeArchives = async () => {
@@ -71,7 +230,7 @@ export default function App() {
         const remoteArchives = await loadArchivesFromSupabase();
         const merged = mergeArchives(remoteArchives, localArchives);
         setArchivedFrames(merged);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(merged.map(sanitizeFrameForStorage)));
       } catch (e) {
         console.error('Failed to load archives from Supabase, using local fallback', e);
         setArchivedFrames(localArchives);
@@ -81,24 +240,6 @@ export default function App() {
     void initializeArchives();
   }, []);
 
-  // Sync archives to localStorage and Supabase when configured
-  const saveArchivesToStorage = (updated: ArchivedFrame[]) => {
-    setArchivedFrames(updated);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    } catch (e) {
-      console.error('Failed to persist archives', e);
-    }
-
-    if (!isSupabaseConfigured) {
-      return;
-    }
-
-    void syncArchivesToSupabase(updated).catch((e) => {
-      console.error('Failed to sync archives to Supabase', e);
-    });
-  };
-
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => {
@@ -106,7 +247,6 @@ export default function App() {
     }, 3000);
   };
 
-  // Capture canvas to Data URL
   const captureCanvasDataUrl = (format: 'png' | 'jpeg' = 'png'): string | null => {
     const canvas = document.querySelector('canvas');
     if (!canvas) return null;
@@ -118,6 +258,37 @@ export default function App() {
     }
   };
 
+  const captureCanvasPreviewDataUrl = (): string | null => {
+    const canvas = document.querySelector('canvas');
+    if (!canvas) return null;
+
+    try {
+      const previewCanvas = document.createElement('canvas');
+      const scale = 0.32;
+      previewCanvas.width = Math.max(200, Math.round(canvas.width * scale));
+      previewCanvas.height = Math.max(200, Math.round(canvas.height * scale));
+      const ctx = previewCanvas.getContext('2d');
+      if (!ctx) return null;
+      ctx.drawImage(canvas, 0, 0, previewCanvas.width, previewCanvas.height);
+      return previewCanvas.toDataURL('image/jpeg', 0.7);
+    } catch (err) {
+      console.error('Failed to capture preview thumbnail data URL:', err);
+      return null;
+    }
+  };
+
+  const isQuotaError = (error: unknown): boolean => {
+    if (error instanceof DOMException) {
+      return (
+        error.name === 'QuotaExceededError' ||
+        error.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+        error.code === 22 ||
+        error.code === 1014
+      );
+    }
+    return false;
+  };
+
   // Automatic Background Archiving - Stores every frame created/edited without asking
   useEffect(() => {
     // Only auto-save if user has customized photo or student name
@@ -126,22 +297,18 @@ export default function App() {
     }
 
     const timer = setTimeout(() => {
-      const dataUrl = captureCanvasDataUrl('png');
-      if (!dataUrl) return;
+      const thumbnailUrl = captureCanvasPreviewDataUrl() || captureCanvasDataUrl('png');
+      if (!thumbnailUrl) return;
 
       setArchivedFrames((prev) => {
         const existingIdx = prev.findIndex((f) => f.id === activeFrameId);
-        const updatedFrame: ArchivedFrame = {
+        const updatedFrame: ArchivedFrame = buildArchiveFrame(thumbnailUrl, {
           id: activeFrameId,
           createdAt: new Date().toISOString(),
-          userName: posterData.userName || 'Unnamed Student',
-          userSubtext: posterData.userSubtext || '',
-          chapterName: posterData.chapterName || 'μlearn',
-          chapterCode: posterData.chapterCode || 'MBCCET',
-          thumbnailUrl: dataUrl,
-          posterData: { ...posterData },
           downloadCount: existingIdx >= 0 ? prev[existingIdx].downloadCount : 1,
-        };
+          posterData: { ...posterData },
+          uploadStatus: existingIdx >= 0 ? prev[existingIdx].uploadStatus ?? 'pending' : 'pending',
+        });
 
         let newList: ArchivedFrame[];
         if (existingIdx >= 0) {
@@ -151,14 +318,10 @@ export default function App() {
           newList = [updatedFrame, ...prev];
         }
 
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(newList));
-        } catch (e) {
-          console.error('Failed to auto-save frame to storage', e);
-        }
+        persistArchivesToLocalStorage(newList);
 
         if (isSupabaseConfigured) {
-          void syncArchivesToSupabase(newList).catch((error) => {
+          void syncArchivesToSupabase(newList.map(sanitizeFrameForStorage)).catch((error) => {
             console.error('Failed to auto-sync frame to Supabase', error);
           });
         }
@@ -234,28 +397,25 @@ export default function App() {
   };
 
   // Save Current Frame to Admin Archive
-  const handleSaveToArchive = () => {
+  const handleSaveToArchive = async (sourceBlob?: Blob | null) => {
     const dataUrl = captureCanvasDataUrl('png');
     if (!dataUrl) {
       showToast('Could not render frame thumbnail.');
-      return;
+      return null;
     }
 
-    const newFrame: ArchivedFrame = {
+    const newFrame = buildArchiveFrame(dataUrl, {
       id: 'frame-' + Date.now(),
       createdAt: new Date().toISOString(),
-      userName: posterData.userName || 'Unnamed Student',
-      userSubtext: posterData.userSubtext || '',
-      chapterName: posterData.chapterName || 'μlearn',
-      chapterCode: posterData.chapterCode || 'MBCCET',
-      thumbnailUrl: dataUrl,
+      uploadStatus: 'pending',
       posterData: { ...posterData },
-      downloadCount: 1,
-    };
+    });
 
     const updated = [newFrame, ...archivedFrames];
     saveArchivesToStorage(updated);
+    void uploadArchiveFrame(newFrame, sourceBlob, { showErrorToast: true });
     showToast('Frame successfully saved to Admin Portal!');
+    return newFrame;
   };
 
   // Export 1: Full Poster Download PNG
@@ -268,9 +428,6 @@ export default function App() {
 
     setDirectDownloadUrl(dataUrl);
 
-    // Auto save copy to admin portal
-    handleSaveToArchive();
-
     const safeName = (posterData.userName || 'fresher')
       .toLowerCase()
       .replace(/[^a-z0-9]/g, '_');
@@ -282,13 +439,7 @@ export default function App() {
       });
 
       if (blob) {
-        const fileName = `frame_${Date.now()}.png`;
-        try {
-          await uploadGeneratedFrameToSupabase(blob, fileName);
-        } catch (error) {
-          console.error('Failed to upload generated frame to Supabase:', error);
-          showToast('Supabase upload failed. Check console for details.');
-        }
+        await handleSaveToArchive(blob);
       } else {
         console.error('Failed to create PNG blob from canvas for Supabase upload.');
         showToast('Could not create image for Supabase upload.');
@@ -472,7 +623,8 @@ export default function App() {
     try {
       const parsed = JSON.parse(jsonString);
       if (Array.isArray(parsed)) {
-        saveArchivesToStorage(parsed);
+        const sanitized = parsed.map((frame) => sanitizeFrameForStorage(frame as ArchivedFrame));
+        saveArchivesToStorage(sanitized);
         showToast('Archived frames imported successfully!');
       } else {
         showToast('Invalid backup JSON format.');
@@ -481,6 +633,29 @@ export default function App() {
       showToast('Failed to parse JSON backup.');
     }
   };
+
+  useEffect(() => {
+    const retryUploads = async () => {
+      if (!isSupabaseConfigured || archivedFrames.length === 0) {
+        return;
+      }
+
+      const pendingFrames = archivedFrames.filter((frame) => frame.uploadStatus === 'pending' || frame.uploadStatus === 'failed');
+      for (const frame of pendingFrames) {
+        if (frame.imageUrl && frame.storagePath) {
+          continue;
+        }
+        await uploadArchiveFrame(frame, null, { showErrorToast: false });
+      }
+    };
+
+    const handleOnline = () => {
+      void retryUploads();
+    };
+
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [archivedFrames]);
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans">

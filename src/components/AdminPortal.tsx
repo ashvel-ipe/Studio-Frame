@@ -373,6 +373,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       <Calendar className="w-3 h-3" />
                       <span>{new Date(frame.createdAt).toLocaleString()}</span>
                     </p>
+                    <p className="text-[10px] font-sans uppercase tracking-[0.18em] text-black/55">
+                      {frame.uploadStatus === 'uploaded'
+                        ? 'Cloud synced'
+                        : frame.uploadStatus === 'failed'
+                          ? 'Local only • retry later'
+                          : 'Pending sync'}
+                    </p>
                   </div>
 
                   {/* Frame Card Actions */}

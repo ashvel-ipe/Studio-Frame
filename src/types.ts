@@ -136,6 +136,8 @@ export interface PosterData {
   showPurpleAccents: boolean;
 }
 
+export type ArchiveUploadStatus = 'pending' | 'uploaded' | 'failed';
+
 export interface ArchivedFrame {
   id: string;
   createdAt: string;
@@ -143,9 +145,14 @@ export interface ArchivedFrame {
   userSubtext: string;
   chapterName: string;
   chapterCode: string;
-  thumbnailUrl: string; // Data URL of rendered poster frame
+  thumbnailUrl: string; // Local preview data URL in memory; persisted metadata uses a public URL when available
   posterData: PosterData;
   downloadCount: number;
+  imageUrl?: string;
+  storagePath?: string;
+  uploadStatus?: ArchiveUploadStatus;
+  lastUploadError?: string | null;
+  syncedAt?: string;
 }
 
 export const DEFAULT_POSTER_DATA: PosterData = {
