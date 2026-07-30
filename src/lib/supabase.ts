@@ -18,20 +18,35 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
 
 const GENERATED_FRAMES_BUCKET = 'generated-frames';
 
-const ensureStorageSession = async () => {
+const getStorageErrorMessage = (error: unknown, fallback = 'Storage upload failed.') => {
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = String((error as { message?: string }).message ?? '');
+    if (message.includes('row-level security policy')) {
+      return 'Storage upload is blocked by Row Level Security. Configure the generated-frames bucket to allow the current auth role to insert objects.';
+    }
+
+    if (message.includes('Anonymous sign-ins are disabled')) {
+      return 'Anonymous authentication is disabled in Supabase. Use the configured auth method or enable anonymous sign-ins for this project.';
+    }
+
+    if (message.includes('No API key') || message.includes('apikey')) {
+      return 'Supabase rejected the request because the project credentials are missing or invalid.';
+    }
+
+    if (message) {
+      return message;
+    }
+  }
+
+  return fallback;
+};
+
+const ensureStorageClient = () => {
   if (!supabase) {
     throw new Error('Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
   }
 
-  const { data } = await supabase.auth.getSession();
-  if (data.session) {
-    return;
-  }
-
-  const { error } = await supabase.auth.signInAnonymously();
-  if (error) {
-    console.warn('Supabase anonymous sign-in did not create a usable session for storage uploads.', error);
-  }
+  return supabase;
 };
 
 export const loadArchivesFromSupabase = async (): Promise<ArchivedFrame[]> => {
@@ -64,14 +79,10 @@ export interface UploadedFrameAsset {
 }
 
 export const uploadGeneratedFrameToSupabase = async (blob: Blob, fileName: string): Promise<UploadedFrameAsset> => {
-  if (!supabase) {
-    throw new Error('Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
-  }
-
-  await ensureStorageSession();
+  const client = ensureStorageClient();
 
   const storagePath = fileName.replace(/^\/+/, '');
-  const { data, error: uploadError } = await supabase.storage
+  const { data, error: uploadError } = await client.storage
     .from(GENERATED_FRAMES_BUCKET)
     .upload(storagePath, blob, {
       contentType: blob.type || 'image/png',
@@ -80,11 +91,12 @@ export const uploadGeneratedFrameToSupabase = async (blob: Blob, fileName: strin
     });
 
   if (uploadError || !data?.path) {
-    console.error('Supabase storage upload failed:', uploadError);
-    throw uploadError ?? new Error('Supabase storage upload returned no object path.');
+    const errorMessage = getStorageErrorMessage(uploadError, 'Supabase storage upload returned no object path.');
+    console.error(errorMessage, uploadError);
+    throw new Error(errorMessage);
   }
 
-  const { data: publicData } = supabase.storage.from(GENERATED_FRAMES_BUCKET).getPublicUrl(data.path);
+  const { data: publicData } = client.storage.from(GENERATED_FRAMES_BUCKET).getPublicUrl(data.path);
 
   return {
     publicUrl: publicData.publicUrl,
